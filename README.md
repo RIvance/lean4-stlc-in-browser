@@ -1,4 +1,4 @@
-# STLC in Lean (Compiles to WebAssembly)
+# STLC Playground in Lean (Compiles to WebAssembly)
 
 A general purpose Lean programming experiment: a parser, type checker,
 call-by-value interpreter with fixed points, persistent sessions, terminal REPL,
