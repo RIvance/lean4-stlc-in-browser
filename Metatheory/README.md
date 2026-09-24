@@ -24,7 +24,7 @@ $$
 
 Here $\bullet$ denotes an absent annotation. The operators $\odot$ are addition,
 truncated subtraction, multiplication, natural-number equality, and less-than
-comparison. Write $\operatorname{res}(\odot)$ for $\mathsf{Nat}$ in the first
+comparison. Write $\mathrm{res}(\odot)$ for $\mathsf{Nat}$ in the first
 three cases and $\mathsf{Bool}$ in the last two.
 
 A context $\Gamma$ is a finite ordered sequence of bindings. In $\Gamma,x:\tau$,
@@ -62,7 +62,7 @@ $$
      {\Gamma\vdash e_1;e_2:\sigma}
 \qquad
 \frac{\Gamma\vdash e_1:\mathsf{Nat}\quad\Gamma\vdash e_2:\mathsf{Nat}}
-     {\Gamma\vdash e_1\mathbin{\odot}e_2:\operatorname{res}(\odot)}
+     {\Gamma\vdash e_1\mathbin{\odot}e_2:\mathrm{res}(\odot)}
 $$
 
 $$
@@ -208,8 +208,8 @@ The empty continuation has type $\mathsf{Unit}$.
 Values are unit, naturals, booleans, and closures
 $\langle\lambda x:\tau.\,e,\rho\rangle$. An environment $\rho$ is a finite
 ordered sequence of entries. Each entry is either a stored value
-$\operatorname{val}(v)$ or a suspended recursive binding
-$\operatorname{rec}(x,e,\rho)$. Extension, written $\rho[x\mapsto r]$, shadows
+$\mathrm{val}(v)$ or a suspended recursive binding
+$\mathrm{rec}(x,e,\rho)$. Extension, written $\rho[x\mapsto r]$, shadows
 earlier bindings for $x$.
 
 Value typing $\vdash_{\mathrm V}v:\tau$, entry typing
@@ -221,12 +221,12 @@ $$
      {\vdash_{\mathrm V}\langle\lambda x:\tau.\,e,\rho\rangle:\tau\to\sigma}
 \qquad
 \frac{\vdash_{\mathrm V}v:\tau}
-     {\vdash_{\mathrm R}\operatorname{val}(v):\tau}
+     {\vdash_{\mathrm R}\mathrm{val}(v):\tau}
 $$
 
 $$
 \frac{\rho\models\Gamma\quad\Gamma,x:\tau\vdash e:\tau}
-     {\vdash_{\mathrm R}\operatorname{rec}(x,e,\rho):\tau}
+     {\vdash_{\mathrm R}\mathrm{rec}(x,e,\rho):\tau}
 \qquad
 \frac{}{\varnothing\models\varnothing}
 \qquad
@@ -266,8 +266,8 @@ typing contexts.
 | $(\mathsf{let}\ x=\square\ \mathsf{in}\ e,\rho)$ | $\rho\models\Gamma$, $\Gamma,x:\tau\vdash e:\sigma$ | $\tau\Rightarrow\sigma$ |
 | $(\square;e,\rho)$ | $\rho\models\Gamma$, $\Gamma\vdash e:\sigma$ | $\tau\Rightarrow\sigma$ |
 | $(\mathsf{if}\ \square\ \mathsf{then}\ e_1\ \mathsf{else}\ e_2,\rho)$ | $\rho\models\Gamma$, $\Gamma\vdash e_1:\tau$, $\Gamma\vdash e_2:\tau$ | $\mathsf{Bool}\Rightarrow\tau$ |
-| $(\square\mathbin{\odot}e,\rho)$ | $\rho\models\Gamma$, $\Gamma\vdash e:\mathsf{Nat}$ | $\mathsf{Nat}\Rightarrow\operatorname{res}(\odot)$ |
-| $v\mathbin{\odot}\square$ | $\vdash_{\mathrm V}v:\mathsf{Nat}$ | $\mathsf{Nat}\Rightarrow\operatorname{res}(\odot)$ |
+| $(\square\mathbin{\odot}e,\rho)$ | $\rho\models\Gamma$, $\Gamma\vdash e:\mathsf{Nat}$ | $\mathsf{Nat}\Rightarrow\mathrm{res}(\odot)$ |
+| $v\mathbin{\odot}\square$ | $\vdash_{\mathrm V}v:\mathsf{Nat}$ | $\mathsf{Nat}\Rightarrow\mathrm{res}(\odot)$ |
 
 A continuation $\kappa$ is a stack of frames, with the next frame first.
 Continuation typing composes their input and output types:
@@ -305,8 +305,8 @@ table above. When a value reaches a frame, evaluation proceeds as follows:
 | Pending frame | Action on the returned value $v$ |
 | --- | --- |
 | $(\square\,e,\rho)$ | Evaluate $e$ in $\rho$, with frame $v\,\square$. |
-| $\langle\lambda x:\tau.\,e,\rho\rangle\,\square$ | Evaluate $e$ in $\rho[x\mapsto\operatorname{val}(v)]$. |
-| $(\mathsf{let}\ x=\square\ \mathsf{in}\ e,\rho)$ | Evaluate $e$ in $\rho[x\mapsto\operatorname{val}(v)]$. |
+| $\langle\lambda x:\tau.\,e,\rho\rangle\,\square$ | Evaluate $e$ in $\rho[x\mapsto\mathrm{val}(v)]$. |
+| $(\mathsf{let}\ x=\square\ \mathsf{in}\ e,\rho)$ | Evaluate $e$ in $\rho[x\mapsto\mathrm{val}(v)]$. |
 | $(\square;e,\rho)$ | Evaluate $e$ in $\rho$. |
 | $(\mathsf{if}\ \square\ \mathsf{then}\ e_1\ \mathsf{else}\ e_2,\rho)$ | If $v$ is true, evaluate $e_1$ in $\rho$; if false, evaluate $e_2$. |
 | $(\square\mathbin{\odot}e,\rho)$ | Evaluate $e$ in $\rho$, with frame $v\mathbin{\odot}\square$. |
@@ -318,8 +318,8 @@ $n\mathbin{\dot{-}}m=\max(n-m,0)$; comparisons return booleans.
 Calling a nonclosure, branching on a nonboolean, or performing arithmetic on
 nonnaturals produces a runtime error.
 
-A variable lookup returning $\operatorname{val}(v)$ returns $v$. A lookup
-returning $\operatorname{rec}(y,e,\rho_0)$ resumes $e$ in its captured
+A variable lookup returning $\mathrm{val}(v)$ returns $v$. A lookup
+returning $\mathrm{rec}(y,e,\rho_0)$ resumes $e$ in its captured
 environment, extended by the same recursive entry. A missing variable produces
 a runtime error. In particular, recursion follows these transitions:
 
@@ -327,11 +327,11 @@ $$
 \begin{aligned}
 \langle\mathsf{fix}^{a}\ x.\,e,\rho,\kappa\rangle
 &\longmapsto
-\langle e,\rho[x\mapsto\operatorname{rec}(x,e,\rho)],\kappa\rangle,\\
+\langle e,\rho[x\mapsto\mathrm{rec}(x,e,\rho)],\kappa\rangle,\\
 \langle x,\rho,\kappa\rangle
 &\longmapsto
-\langle e,\rho_0[y\mapsto\operatorname{rec}(y,e,\rho_0)],\kappa\rangle
-\quad\text{if }\rho(x)=\operatorname{rec}(y,e,\rho_0).
+\langle e,\rho_0[y\mapsto\mathrm{rec}(y,e,\rho_0)],\kappa\rangle
+\quad\text{if }\rho(x)=\mathrm{rec}(y,e,\rho_0).
 \end{aligned}
 $$
 
@@ -372,7 +372,7 @@ binder's type. Primitive operations return their declared result types. For
 recursion, if $\rho\models\Gamma$ and $\Gamma,x:\sigma\vdash e:\sigma$, then
 
 $$
-\rho[x\mapsto\operatorname{rec}(x,e,\rho)]\models\Gamma,x:\sigma.
+\rho[x\mapsto\mathrm{rec}(x,e,\rho)]\models\Gamma,x:\sigma.
 $$
 
 The resumed body therefore has the required type. In every case the unchanged
