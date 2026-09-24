@@ -1,0 +1,22 @@
+name = "LambdaCalculus"
+version = "0.1.0"
+defaultTargets = ["lambdacalculus", "Metatheory"]
+testDriver = "stlcTests"
+
+[[lean_lib]]
+name = "LambdaCalculus"
+
+[[lean_lib]]
+name = "App"
+roots = ["App.Json", "App.Repl", "App.Wasm"]
+
+[[lean_lib]]
+name = "Metatheory"
+
+[[lean_exe]]
+name = "lambdacalculus"
+root = "Main"
+
+[[lean_exe]]
+name = "stlcTests"
+root = "Tests"

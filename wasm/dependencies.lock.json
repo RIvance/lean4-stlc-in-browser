@@ -1,0 +1,10 @@
+{"schemaVersion": 1,
+ "libuv":
+ {"revision": "e9f29cb984231524e3931aa0ae2c5dae1a32884e",
+  "release":
+  {"tag": "v1.48.0", "repository": "https://github.com/libuv/libuv.git"}},
+ "emsdk":
+ {"revision": "5eb0bde7585670252e8ba05e9d361627bffd08b5",
+  "release":
+  {"tag": "6.0.9",
+   "repository": "https://github.com/emscripten-core/emsdk.git"}}}

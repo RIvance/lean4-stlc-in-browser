@@ -1,0 +1,11 @@
+{
+  "leanRepository": "https://github.com/leanprover/lean4.git",
+  "libuv": {
+    "repository": "https://github.com/libuv/libuv.git",
+    "tag": "v1.48.0"
+  },
+  "emsdk": {
+    "repository": "https://github.com/emscripten-core/emsdk.git",
+    "tag": "6.0.9"
+  }
+}

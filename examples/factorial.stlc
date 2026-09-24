@@ -1,0 +1,5 @@
+// A recursive function with a named parameter and newline-delimited bindings.
+def factorial (n: Nat) =
+  if n == 0 then 1 else n * factorial (n - 1)
+let answer = factorial 5
+answer

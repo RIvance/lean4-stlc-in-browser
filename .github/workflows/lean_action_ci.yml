@@ -1,0 +1,41 @@
+name: Native and browser STLC
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: leanprover/lean-action@v1
+        with:
+          test: true
+      - name: Check Lean build tooling
+        run: |
+          mkdir -p .lake/build-tooling/scripts
+          lean -o .lake/build-tooling/scripts/BuildWasm.olean scripts/BuildWasm.lean
+          LEAN_PATH=.lake/build-tooling lean scripts/TestBuildWasm.lean
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: |
+            playground-core/package-lock.json
+            web/package-lock.json
+      - name: Compile Lean to WebAssembly and build the static playground
+        shell: bash
+        run: |
+          lean --run scripts/BuildWasm.lean --setup-emsdk "$RUNNER_TEMP/emsdk"
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          lean --run scripts/BuildWasm.lean --web
+      - run: npm run test:wasm --prefix web
+      - run: npx --prefix web playwright install --with-deps chromium
+      - run: npm run test:e2e --prefix web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stlc-static-playground
+          path: web/dist/

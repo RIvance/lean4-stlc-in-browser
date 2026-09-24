@@ -1,0 +1,4 @@
+// Functions can accept and return other functions.
+let twice = (f: Nat → Nat, x: Nat) ⇒ f (f x)
+let increment = (n: Nat) ⇒ n + 1
+twice(increment, 40)
