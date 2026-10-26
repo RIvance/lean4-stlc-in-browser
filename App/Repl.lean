@@ -19,10 +19,11 @@ def replHelp : String :=
 private def render (r : Result) : String :=
   s!"{(r.value.map Value.pretty).getD "✓"} : {r.type}"
 
-private def submit (s : Session) (source : String) (fuel : Nat) (output : IO.FS.Stream) : IO Session := do
-  match s.submit source fuel with
-  | .error d => output.putStrLn d.pretty; return s
-  | .ok (s', r) => output.putStrLn (render r); return s'
+private def submit (s : Session) (source : String) (output : IO.FS.Stream) : IO Session := do
+  match s.submit source with
+  | none => output.putStrLn "Evaluation does not terminate."; return s
+  | some (.error d) => output.putStrLn d.pretty; return s
+  | some (.ok (s', r)) => output.putStrLn (render r); return s'
 
 private def environment (s : Session) (output : IO.FS.Stream) : IO Unit := do
   let mut names : List String := []
@@ -33,7 +34,7 @@ private def environment (s : Session) (output : IO.FS.Stream) : IO Unit := do
   if names.isEmpty then output.putStrLn "No bindings."
 
 /-- Streams make the REPL usable with a terminal, a pipe, or a Lean test harness. -/
-def repl (input output : IO.FS.Stream) (fuel : Nat := 100000) (prompts : Bool := true) : IO Unit := do
+def repl (input output : IO.FS.Stream) (prompts : Bool := true) : IO Unit := do
   if prompts then output.putStrLn "STLC in Lean. Enter :help for commands."
   let mut session : Session := {}
   let mut multiline : Option String := none
@@ -50,7 +51,7 @@ def repl (input output : IO.FS.Stream) (fuel : Nat := 100000) (prompts : Bool :=
       let command := line.trimAscii.toString
       if let some source := multiline then
         if command == ":}" then
-          session ← submit session source fuel output
+          session ← submit session source output
           multiline := none
         else multiline := some (source ++ line)
       else if command.isEmpty then pure ()
@@ -68,9 +69,9 @@ def repl (input output : IO.FS.Stream) (fuel : Nat := 100000) (prompts : Bool :=
       else if command.startsWith ":load " then
         try
           let source ← IO.FS.readFile (command.drop 6).toString
-          session ← submit session source fuel output
+          session ← submit session source output
         catch e => output.putStrLn s!"I/O error: {e}"
       else if command.startsWith ":" then output.putStrLn "Unknown command. Enter :help for commands."
-      else session ← submit session line fuel output
+      else session ← submit session line output
 
 end App

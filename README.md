@@ -34,9 +34,8 @@ lake exe lambdacalculus --repl
 lake test
 ```
 
-Omit the filename to read standard input. `--fuel N` sets the machine step
-limit, including zero. Exit statuses are 0 for success, 1 for a language error,
-and 2 for command-line or filesystem errors. `--check` parses and checks types
+Omit the filename to read standard input. Exit statuses are 0 for success,
+1 for a language error, and 2 for command-line or filesystem errors. `--check` parses and checks types
 without evaluating. JSON results include the type, value, parsed expression,
 step count, or a diagnostic with a UTF-16 source range.
 
@@ -74,9 +73,8 @@ across redefinitions at the prompt.
 | `:help` | Show help |
 | `:quit`, `:q`, EOF | Exit |
 
-`--repl --quiet` suppresses prompts for pipes and scripts; `--fuel N` controls
-the shared evaluation budget for a submission. The REPL uses Lean's standard
-streams and filesystem APIs. It requires neither Node.js nor WebAssembly.
+`--repl --quiet` suppresses prompts for pipes and scripts. The REPL uses Lean's
+standard streams and filesystem APIs. It requires neither Node.js nor WebAssembly.
 
 ## Use the core as a Lean library
 
@@ -88,18 +86,26 @@ JSON, C exports, CLI, or browser dependencies. Both frontends consume this API:
 import LambdaCalculus
 open LambdaCalculus
 
-def exampleSession : Except Diagnostic String := do
+def exampleSession : Evaluation String := do
   let (s, _) ← ({} : Session).submit "let x = 40"
   let (_, r) ← s.submit "x + 2"
   return (r.value.map Value.pretty).getD ""
 
-#eval exampleSession  -- Except.ok "42"
+#eval exampleSession  -- some (Except.ok "42")
 ```
 
 `parse`, `parseProgram`, `parseCommand`, `infer`, `inferProgram`, `evaluate`, and
 `evaluateIn` are also usable separately. `Session.check` and `Session.run` treat
 the input as a scoped program; `Session.submit` also preserves its top-level
 declarations. An environment contains values and suspended recursive entries.
+
+Evaluation uses Lean's `partial_fixpoint` with no step limit. `Evaluation α`
+is `ExceptT Diagnostic Option α`: a completed computation is `some (.ok value)`
+or `some (.error diagnostic)`, while `none` denotes divergence mathematically.
+A divergent compiled computation keeps running; it does not return `none` as
+a timeout. Interrupt it through the frontend. `Session.check` returns an
+ordinary `Except Diagnostic Result` because it does not evaluate the program.
+
 The JSON encoder is in `App.Json`; terminal operations are in `App.Repl` and
 `Main`; the C export is in `App.Wasm`. Nothing in `LambdaCalculus/` imports
 these adapters. The Wasm build follows the imports of `App.Wasm`, so it does
@@ -273,8 +279,9 @@ also accepts an annotation: `fix (x: Nat) ⇒ x`.
 
 Evaluation unfolds a fixed point when its recursive name is used. Suspended
 environment entries capture its original scope without cyclic Lean data.
-Nontermination, including `def x: Nat = x`, is bounded by the machine-step
-budget, and the browser's Stop button can terminate its worker.
+Nonterminating programs, including `def x: Nat = x`, keep running until
+interrupted. Use Ctrl-C to terminate native execution or Stop to terminate
+the browser worker and start another run.
 
 Both conditional branches must have the same type, and the condition must have type `Bool`.
 Only the selected branch is evaluated. Arithmetic and comparison operands
@@ -289,24 +296,24 @@ with `//`; `/* ... */` comments can nest.
 
 Closures capture their definition environment, so shadowing a captured name
 does not change the closure. The interpreter uses an explicit continuation
-stack and left-to-right call-by-value evaluation. Execution has a default
-budget of 100,000 machine transitions. Parsing accepts at most 64 KiB of UTF-8,
-2047 non-EOF tokens, and 256 levels of syntax/expression depth. These are
-resource limits of the implementation. The browser worker has a maximum
-Wasm memory of 512 MiB and can be terminated with Stop.
+stack and left-to-right call-by-value evaluation. Parsing accepts at most
+64 KiB of UTF-8, 2047 non-EOF tokens, and 256 levels of syntax/expression depth.
+These are resource limits of the implementation. The browser worker has a
+maximum Wasm memory of 512 MiB. The playground's execution time limit and
+Stop button interrupt the worker independently of the pure evaluator.
 
 ## Compilation pipeline
 
 ```text
-Lean sources ── Lean compiler ────── C
-                                      │
+Lean sources ──── Lean compiler ────── C
+                                       │
 Lean C++ runtime + LibUV filesystem ───┤
-                                      ↓
-                           Emscripten / LLVM / LTO
-                                      ↓
-                          stlc.mjs + stlc.wasm
-                                      ↓
-                          playground-core worker
+                                       ↓
+                            Emscripten / LLVM / LTO
+                                       ↓
+                              stlc.mjs + stlc.wasm
+                                       ↓
+                              playground worker
 ```
 
 The driver re-emits C for the exact standard-library dependencies using the

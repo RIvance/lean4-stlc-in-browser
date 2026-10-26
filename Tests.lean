@@ -11,12 +11,18 @@ structure TestCase where
   type : String := ""
   value : String := ""
   error : String := ""
-  fuel : Nat := 100000
   checkOnly : Bool := false
 deriving Lean.ToJson
 
-private def success (name source type value : String) : TestCase := ⟨name, source, type, value, "", 100000, false⟩
-private def failure (name source error : String) : TestCase := ⟨name, source, "", "", error, 100000, false⟩
+private def success (name source type value : String) : TestCase := ⟨name, source, type, value, "", false⟩
+private def failure (name source error : String) : TestCase := ⟨name, source, "", "", error, false⟩
+
+private def divergentPrograms : Array (String × String) := #[
+  ("named recursive divergence", "def f (n: Nat): Nat = f n in f 0"),
+  ("recursive divergence", "def f: Nat → Nat = (n: Nat) ⇒ f n in f 0"),
+  ("strict recursive binding", "def x: Nat = x\n42"),
+  ("strict block sequence", "{ fix (x: Nat) ⇒ x\n42 }")
+]
 
 def cases : Array TestCase := #[
   success "natural" "42" "Nat" "42",
@@ -170,10 +176,6 @@ def cases : Array TestCase := #[
   failure "named recursive argument mismatch" "def f (n: Nat) = if n == 0 then 0 else f true\nf 0" "Type error",
   failure "named result annotation mismatch" "def f (x: Nat): Bool = x" "Type error",
   failure "named ambiguous recursive type" "def f (n: Nat) = f n" "Type error",
-  { (failure "named recursive divergence" "def f (n: Nat): Nat = f n in f 0" "Resource limit") with fuel := 100 },
-  { (failure "recursive divergence" "def f: Nat → Nat = (n: Nat) ⇒ f n in f 0" "Resource limit") with fuel := 100 },
-  { (failure "strict recursive binding" "def x: Nat = x\n42" "Resource limit") with fuel := 100 },
-  { (failure "strict block sequence" "{ fix (x: Nat) ⇒ x\n42 }" "Resource limit") with fuel := 100 },
   failure "no self application" "(x: Nat) ⇒ x(x)" "Type error",
   failure "non-function whitespace application" "42 false" "Type error",
   failure "wrong whitespace argument" "((x: Nat) ⇒ x) false" "Type error",
@@ -199,8 +201,9 @@ def cases : Array TestCase := #[
   failure "UTF-16 columns" "/* 😀 */ false + 1" "Type error",
   failure "Windows newlines" "// heading\r\nfalse + 1" "Type error",
   failure "CR newlines" "// heading\rfalse + 1" "Type error",
-  { (failure "zero fuel" "42" "Resource limit") with fuel := 0 },
-  { (success "check without evaluation" "42" "Nat" "") with fuel := 0, checkOnly := true },
+  success "long recursive evaluation"
+    "def count (n: Nat) = if n == 0 then 42 else count (n - 1)\ncount 20000" "Nat" "42",
+  { (success "check without evaluation" "42" "Nat" "") with checkOnly := true },
   failure "source size" (String.ofList (List.replicate 65537 ' ')) "Resource limit",
   failure "nesting limit" (String.ofList (List.replicate 257 '(') ++ "1" ++ String.ofList (List.replicate 257 ')')) "Resource limit",
   failure "token limit" (String.intercalate " + " (List.replicate 1025 "1")) "Resource limit",
@@ -215,37 +218,40 @@ def cases : Array TestCase := #[
     ("def f " ++ String.intercalate " " (List.replicate 257 "(x: Nat)") ++ " = x") "Resource limit",
   failure "statement depth" (String.intercalate "\n" (List.replicate 257 "1")) "Resource limit",
   failure "block depth" (String.ofList (List.replicate 257 '{') ++ "1" ++ String.ofList (List.replicate 257 '}')) "Resource limit"
-]
+] ++ divergentPrograms.map fun (name, source) => { success name source "Nat" "" with checkOnly := true }
 
 private def check (test : TestCase) : IO Unit := do
-  let result := process test.source test.fuel test.checkOnly
+  let result := process test.source test.checkOnly
   let valid := match result with
-    | .error d => d.phase == test.error && !test.error.isEmpty
-    | .ok r => test.error.isEmpty && r.type.pretty == test.type && (r.value.map Value.pretty).getD "" == test.value
+    | none => false
+    | some (.error d) => d.phase == test.error && !test.error.isEmpty
+    | some (.ok r) => test.error.isEmpty && r.type.pretty == test.type && (r.value.map Value.pretty).getD "" == test.value
   unless valid do throw <| IO.userError s!"{test.name}: {resultJson result}"
-  if let .ok r := result then
-    let roundTrip := process r.term.pretty test.fuel test.checkOnly
+  if let some (.ok r) := result then
+    if test.name == "long recursive evaluation" then
+      unless r.steps > 100000 do throw <| IO.userError "The long execution did not exceed the former step limit."
+    let roundTrip := process r.term.pretty test.checkOnly
     let preserved := match roundTrip with
-      | .ok r' => r.type == r'.type && r.steps == r'.steps && r.value.map Value.pretty == r'.value.map Value.pretty
-      | .error _ => false
+      | some (.ok r') => r.type == r'.type && r.steps == r'.steps && r.value.map Value.pretty == r'.value.map Value.pretty
+      | _ => false
     unless preserved do throw <| IO.userError s!"Pretty-printer round trip failed: {test.name}"
 
 private def checkCurrying : IO Unit := do
   let nested := "let twice = (f: Nat → Nat) ⇒ (x: Nat) ⇒ f(f(x)) in "
   let compact := "let twice = (f: Nat → Nat, x: Nat) ⇒ f (f x) in "
   let increment := "let increment = (n: Nat) ⇒ n + 1 in "
-  let .ok expected := process (nested ++ increment ++ "twice(increment)(40)")
+  let some (.ok expected) := process (nested ++ increment ++ "twice(increment)(40)")
     | throw <| IO.userError "Curried baseline failed"
   let expectedResult := (expected.term.pretty, expected.type, expected.value.map Value.pretty, expected.steps)
   for declaration in [nested, compact] do
     for application in ["twice increment 40", "twice(increment, 40)", "twice(increment)(40)"] do
-      let .ok actual := process (declaration ++ increment ++ application)
+      let some (.ok actual) := process (declaration ++ increment ++ application)
         | throw <| IO.userError s!"Curried syntax failed: {declaration}{application}"
       let actualResult := (actual.term.pretty, actual.type, actual.value.map Value.pretty, actual.steps)
       unless actualResult == expectedResult do
         throw <| IO.userError "Curried syntax did not preserve the term, type, value, and step count"
   for (source, column) in [("add(20, false)", 8), ("add 20 false", 7)] do
-    let .error d := process ("let add = (x: Nat, y: Nat) ⇒ x + y in\n" ++ source)
+    let some (.error d) := process ("let add = (x: Nat, y: Nat) ⇒ x + y in\n" ++ source)
       | throw <| IO.userError "Expected a curried argument diagnostic"
     unless d.span.start == ⟨1, column⟩ && d.span.stop == ⟨1, column + 5⟩ do
       throw <| IO.userError "Curried argument diagnostic has an incorrect source span"
@@ -264,11 +270,11 @@ private def checkDefParameters : IO Unit := do
   ]
   let suffix := "if n == 0 then acc else sum(n − 1, acc + n) in sum(10, 0)"
   for group in [definitions, annotatedDefinitions] do
-    let .ok expected := process (group.head! ++ suffix)
+    let some (.ok expected) := process (group.head! ++ suffix)
       | throw <| IO.userError "Recursive definition baseline failed"
     let expectedResult := (expected.term.pretty, expected.type, expected.value.map Value.pretty, expected.steps)
     for declaration in group do
-      let .ok actual := process (declaration ++ suffix)
+      let some (.ok actual) := process (declaration ++ suffix)
         | throw <| IO.userError s!"Named parameter syntax failed: {declaration}"
       let actualResult := (actual.term.pretty, actual.type, actual.value.map Value.pretty, actual.steps)
       unless actualResult == expectedResult do
@@ -278,19 +284,19 @@ private def checkDefParameters : IO Unit := do
     ("def f (n: Nat): Nat =\n  if n == 0 then 0 else f true\nf 0", (1, 26), (1, 30)),
     ("def f (n: Nat) = n in\n", (1, 0), (1, 0))
   ] do
-    let .error d := process source | throw <| IO.userError "Expected a named parameter diagnostic"
+    let some (.error d) := process source | throw <| IO.userError "Expected a named parameter diagnostic"
     unless d.span.start == ⟨start.1, start.2⟩ && d.span.stop == ⟨stop.1, stop.2⟩ do
       throw <| IO.userError s!"Named parameter diagnostic has an incorrect source span: {repr d.span}"
   IO.println "6 recursive definition spellings preserve terms, types, values, and step counts."
 
-private def transcript (input : String) (fuel : Nat := 100000) : IO String := do
+private def transcript (input : String) : IO String := do
   let source ← IO.mkRef ({ data := input.toUTF8 } : IO.FS.Stream.Buffer)
   let output ← IO.mkRef ({} : IO.FS.Stream.Buffer)
-  App.repl (IO.FS.Stream.ofBuffer source) (IO.FS.Stream.ofBuffer output) fuel false
+  App.repl (IO.FS.Stream.ofBuffer source) (IO.FS.Stream.ofBuffer output) false
   return String.fromUTF8! (← output.get).data
 
-private def checkTranscript (name input expected : String) (fuel : Nat := 100000) : IO Unit := do
-  let output ← transcript input fuel
+private def checkTranscript (name input expected : String) : IO Unit := do
+  let output ← transcript input
   unless output == expected do throw <| IO.userError s!"REPL {name}:\nExpected:\n{expected}\nFound:\n{output}"
 
 private def checkRepl : IO Unit := do
@@ -320,18 +326,18 @@ private def checkRepl : IO Unit := do
   checkTranscript "script bindings and private blocks"
     ":{\nlet x = 40\nlet y = 2\nx + y\n:}\nx\n:{\n{ let x = 0\nx }\n:}\nx\n"
     "42 : Nat\n40 : Nat\n0 : Nat\n40 : Nat\n"
-  checkTranscript "batch rollback and shared fuel"
-    ":{\nlet x = 42\n43\n:}\n:type x\n"
-    ("Resource limit at 1:1: Evaluation exceeded the machine step limit.\n"
-    ++ "Type error at 1:1: Unbound variable 'x'.\n") 1
+  checkTranscript "batch rollback after a type error"
+    ":{\nlet x = 42\nfalse + 1\n:}\n:type x\n"
+    ("Type error at 2:1: Expected Nat, found Bool.\n"
+    ++ "Type error at 1:1: Unbound variable 'x'.\n")
   checkTranscript "recursive type constrained across a submission"
     ":{\ndef loop = (n: Nat) ⇒ loop n\nif true then 42 else loop 0\n:}\n:type loop\n"
     "42 : Nat\nNat → Nat\n"
   checkTranscript "ordinary let expression" "let x = 1 in x + 1\n:env\n" "2 : Nat\nNo bindings.\n"
-  checkTranscript "failed definition and zero fuel"
-    ":type 42\nlet x = 42\n:type x\n"
-    ("Nat\nResource limit at 1:1: Evaluation exceeded the machine step limit.\n"
-    ++ "Type error at 1:1: Unbound variable 'x'.\n") 0
+  checkTranscript "failed definition"
+    ":type 42\nlet x = false + 1\n:type x\n"
+    ("Nat\nType error at 1:9: Expected Nat, found Bool.\n"
+    ++ "Type error at 1:1: Unbound variable 'x'.\n")
   checkTranscript "unfinished multiline input" ":{\n42\n" "Unfinished multiline input: expected :}.\n"
   checkTranscript "invalid command" ":unknown\n:q\n42\n" "Unknown command. Enter :help for commands.\n"
   checkTranscript "help" ":help\n" (App.replHelp ++ "\n")
@@ -340,25 +346,57 @@ private def checkRepl : IO Unit := do
     handle.flush
     checkTranscript "load a file" s!":load {path}\nanswer + 1\n" "() : Unit\n43 : Nat\n"
   let s : Session := {}
-  let .ok (s', _) := s.submit "let x = 42" | throw <| IO.userError "Pure session binding failed"
+  let some (.ok (s', _)) := s.submit "let x = 42" | throw <| IO.userError "Pure session binding failed"
   unless s.bindings.isEmpty && s'.bindings.length == 1 do
     throw <| IO.userError "Session updates did not preserve the original immutable state"
-  let .ok (_, r) := s'.submit "x + 1" | throw <| IO.userError "Pure session evaluation failed"
+  let some (.ok (_, r)) := s'.submit "x + 1" | throw <| IO.userError "Pure session evaluation failed"
   unless r.value.map Value.pretty == some "43" do throw <| IO.userError "Pure session result is incorrect"
   IO.println "14 pure Lean REPL transcripts and immutable session checks passed."
 
+private def checkDivergence : IO Unit := do
+  for (name, source) in divergentPrograms do
+    let child ← IO.Process.spawn {
+      cmd := (← IO.appPath).toString
+      args := #["--run-input"]
+      stdin := .piped
+      stdout := .piped
+      stderr := .piped
+    }
+    unless (← child.stdout.getLine) == "ready\n" do
+      throw <| IO.userError s!"The divergence test process did not start: {name}"
+    let child ← do
+      let (input, child) ← child.takeStdin
+      input.putStr source
+      input.flush
+      pure child
+    try
+      IO.sleep 200
+      unless (← child.tryWait).isNone do
+        throw <| IO.userError s!"A divergent program returned a result: {name}"
+    finally
+      if (← child.tryWait).isNone then
+        child.kill
+        let _ ← child.wait
+  IO.println "4 divergent native programs remain running until externally interrupted."
+
 def main (args : List String) : IO Unit := do
-  if args == ["--corpus"] then IO.println (Lean.toJson cases).compress
+  if args == ["--run-input"] then
+    let output ← IO.getStdout
+    output.putStrLn "ready"
+    output.flush
+    IO.println (resultJson (process (← (← IO.getStdin).readToEnd)))
+  else if args == ["--corpus"] then IO.println (Lean.toJson cases).compress
   else
     for test in cases do check test
-    let .error d := process "/* 😀 */ false + 1" | throw <| IO.userError "Expected a diagnostic"
+    let some (.error d) := process "/* 😀 */ false + 1" | throw <| IO.userError "Expected a diagnostic"
     unless d.span.start.column == 9 && d.span.stop.column == 14 do
       throw <| IO.userError "Diagnostic columns are not UTF-16 offsets"
     for source in ["// heading\r\nfalse + 1", "// heading\rfalse + 1"] do
-      let .error d := process source | throw <| IO.userError "Expected a diagnostic"
+      let some (.error d) := process source | throw <| IO.userError "Expected a diagnostic"
       unless d.span.start == ⟨1, 0⟩ && d.span.stop == ⟨1, 5⟩ do
         throw <| IO.userError "Diagnostic positions do not respect CR/CRLF newlines"
     IO.println s!"{cases.size} native tests passed, including successful pretty-printer round trips."
     checkCurrying
     checkDefParameters
     checkRepl
+    checkDivergence

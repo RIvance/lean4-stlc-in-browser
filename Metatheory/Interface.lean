@@ -26,7 +26,7 @@ theorem checkSound {s : Session} (h : s.check source = .ok r) : ResultHasType s.
   }
 }
 
-theorem runSound {s : Session} (hρ : s.environment ⊨ s.context) (h : s.run source fuel = .ok r) :
+theorem runSound {s : Session} (hρ : s.environment ⊨ s.context) (h : s.run source = some (.ok r)) :
   ResultHasType s.context r
 := by {
   unfold Session.run at h
@@ -37,39 +37,45 @@ theorem runSound {s : Session} (hρ : s.environment ⊨ s.context) (h : s.run so
     change (
       do
         let τ ← infer s.context e
-        let (v, steps) ← evaluateIn s.environment e fuel
+        let (v, steps) ← evaluateIn s.environment e
         pure (⟨τ, e, some v, steps⟩ : Result)
-    ) = .ok r at h
+      : Evaluation Result
+    ) = some (.ok r) at h
     cases hτ : infer s.context e with
     | error d => rw [hτ] at h; cases h
     | ok τ => {
       rw [hτ] at h
-      cases hv : evaluateIn s.environment e fuel with
-      | error d => rw [hv] at h; cases h
-      | ok result => {
-        rcases result with ⟨v, steps⟩
-        rw [hv] at h
-        cases h
-        have heτ := inferSound hτ
-        have hsafe := evaluateInSafe (fuel := fuel) hρ heτ
-        rw [hv] at hsafe
-        exact ⟨heτ, by { intro v' h'; cases h'; exact hsafe }⟩
+      cases hv : evaluateIn s.environment e with
+      | none => rw [hv] at h; cases h
+      | some result => {
+        cases result with
+        | error d => rw [hv] at h; cases h
+        | ok result => {
+          rcases result with ⟨v, steps⟩
+          rw [hv] at h
+          cases h
+          have heτ := inferSound hτ
+          have hsafe := evaluateInSafe hρ heτ
+          rw [hv] at hsafe
+          exact ⟨heτ, by { intro v' h'; cases h'; exact hsafe }⟩
+        }
       }
     }
   }
 }
 
 /-- This is the entry point shared by the native CLI and the Wasm adapter. -/
-theorem processSound (h : process source fuel checkOnly = .ok r) : ResultHasType [] r := by {
+theorem processSound (h : process source checkOnly = some (.ok r)) : ResultHasType [] r := by {
   cases checkOnly
   · exact runSound (s := {}) .nil h
-  · exact checkSound (s := {}) h
+  · exact checkSound (s := {}) (Option.some.inj h)
 }
 
 theorem inferredEvaluationSafe (hρ : ρ ⊨ Γ) (h : infer Γ e = .ok τ) :
-  match evaluateIn ρ e fuel with
-  | .ok (v, _) => ⊢ᵥ v ∶ τ
-  | .error d => d = ⟨"Resource limit", "Evaluation exceeded the machine step limit.", {}⟩
+  match evaluateIn ρ e with
+  | none => True
+  | some (.ok (v, _)) => ⊢ᵥ v ∶ τ
+  | some (.error _) => False
 := by {
   exact evaluateInSafe hρ (inferSound h)
 }

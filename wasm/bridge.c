@@ -6,7 +6,7 @@
 extern void lean_initialize_runtime_module(void);
 extern lean_object *initialize_Init_System_IO(uint8_t builtin);
 extern lean_object *initialize_LambdaCalculus_App_Wasm(uint8_t builtin);
-extern lean_object *stlc_process(lean_object *source, uint32_t fuel, uint8_t check_only);
+extern lean_object *stlc_process(lean_object *source, uint8_t check_only);
 
 int stlc_init(void) {
     lean_initialize_runtime_module();
@@ -28,8 +28,8 @@ int stlc_init(void) {
 }
 
 /* The caller owns the returned UTF-8 buffer and releases it with free. */
-char *stlc_request(const char *source, uint32_t length, uint32_t fuel, uint8_t check_only) {
-    lean_object *result = stlc_process(lean_mk_string_from_bytes(source, length), fuel, check_only);
+char *stlc_request(const char *source, uint32_t length, uint8_t check_only) {
+    lean_object *result = stlc_process(lean_mk_string_from_bytes(source, length), check_only);
     size_t size = lean_string_size(result);
     char *output = malloc(size);
     if (output) memcpy(output, lean_string_cstr(result), size);

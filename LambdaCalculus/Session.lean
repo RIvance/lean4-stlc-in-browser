@@ -27,18 +27,16 @@ def Session.check (s : Session) (source : String) : Except Diagnostic Result := 
   let e ← parse source
   return ⟨← infer s.context e, e, none, 0⟩
 
-private def runExpr (s : Session) (e : Expr) (fuel : Nat) : Except Diagnostic Result := do
+private def runExpr (s : Session) (e : Expr) : Evaluation Result := do
   let τ ← infer s.context e
-  let (v, steps) ← evaluateIn s.environment e fuel
+  let (v, steps) ← evaluateIn s.environment e
   return ⟨τ, e, some v, steps⟩
 
-def Session.run (s : Session) (source : String) (fuel : Nat := 100000) : Except Diagnostic Result := do
-  runExpr s (← parse source) fuel
+def Session.run (s : Session) (source : String) : Evaluation Result := do
+  runExpr s (← parse source)
 
-/-- Submissions are checked together and committed atomically; their evaluation shares one budget. -/
-def Session.submit (s : Session) (source : String) (fuel : Nat := 100000)
-  : Except Diagnostic (Session × Result)
-:= do
+/-- Submissions are checked together; bindings become visible only when the submission finishes. -/
+def Session.submit (s : Session) (source : String) : Evaluation (Session × Result) := do
   let commands ← parseProgram source
   let checked ← inferProgram s.context commands
   let mut session := s
@@ -46,7 +44,7 @@ def Session.submit (s : Session) (source : String) (fuel : Nat := 100000)
   for (command, τ) in checked do
     let e := match command with
       | .define _ _ e | .expr e => e
-    let (v, steps) ← evaluateIn session.environment e (fuel - result.steps)
+    let (v, steps) ← evaluateIn session.environment e
     result := { result with steps := result.steps + steps }
     match command with
     | .define _ x _ =>
@@ -55,7 +53,7 @@ def Session.submit (s : Session) (source : String) (fuel : Nat := 100000)
     | .expr _ => result := { result with type := τ, value := some v }
   return (session, result)
 
-def process (source : String) (fuel : Nat := 100000) (checkOnly : Bool := false) : Except Diagnostic Result :=
-  if checkOnly then ({} : Session).check source else ({} : Session).run source fuel
+def process (source : String) (checkOnly : Bool := false) : Evaluation Result :=
+  if checkOnly then some (({} : Session).check source) else ({} : Session).run source
 
 end LambdaCalculus

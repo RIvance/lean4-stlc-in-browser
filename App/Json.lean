@@ -23,9 +23,10 @@ def diagnosticJson (d : Diagnostic) : String :=
   "{\"phase\":" ++ jsonString d.phase ++ ",\"message\":" ++ jsonString d.message
   ++ ",\"range\":{\"start\":" ++ positionJson d.span.start ++ ",\"end\":" ++ positionJson d.span.stop ++ "}}"
 
-def resultJson : Except Diagnostic Result → String
-  | .error d => "{\"status\":\"error\",\"diagnostic\":" ++ diagnosticJson d ++ "}"
-  | .ok r =>
+def resultJson : Evaluation Result → String
+  | none => "{\"status\":\"diverged\"}"
+  | some (.error d) => "{\"status\":\"error\",\"diagnostic\":" ++ diagnosticJson d ++ "}"
+  | some (.ok r) =>
     "{\"status\":\"success\",\"type\":" ++ jsonString r.type.pretty
     ++ ",\"term\":" ++ jsonString r.term.pretty
     ++ ",\"value\":" ++ (r.value.map (jsonString ∘ Value.pretty)).getD "null"

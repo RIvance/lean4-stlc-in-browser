@@ -104,58 +104,83 @@ theorem terminalHasType (hs : ⊢ₘ ⟨.value v, []⟩ ∶ τ) : ⊢ᵥ v ∶ �
   cases hc with | value hv => exact hv
 }
 
-/-- A typed execution either returns a value of its type or exhausts its fuel. -/
-theorem runMachineSafe (hs : ⊢ₘ s ∶ τ) :
-  match runMachine fuel s steps with
+/-- Every completed execution of a typed machine returns a value of its result type. -/
+theorem runMachineResultSafe (hr : runMachine s steps = some r) (hs : ⊢ₘ s ∶ τ) :
+  match (generalizing := false) r with
   | .ok (v, _) => ⊢ᵥ v ∶ τ
-  | .error d => d = ⟨"Resource limit", "Evaluation exceeded the machine step limit.", {}⟩
+  | .error _ => False
 := by {
-  induction fuel generalizing s steps with
-  | zero => {
-    rcases s with ⟨c, κ⟩
-    cases c <;> cases κ
-    all_goals first | exact terminalHasType hs | rfl
+  refine (
+    runMachine.partial_correctness
+      (motive := fun s _ r => (⊢ₘ s ∶ τ) → match r with
+        | .ok (v, _) => ⊢ᵥ v ∶ τ
+        | .error _ => False
+      )
+      ?_ s steps r hr hs
+  )
+  intro run ih s k r h hs
+  obtain ⟨s', hstep, hs'⟩ := stepSafe hs
+  rcases s with ⟨c, κ⟩
+  cases c with
+  | expr ρ e => {
+    simp only [hstep] at h
+    exact ih s' (k + 1) r h hs'
   }
-  | succ fuel ih => {
-    obtain ⟨s', hstep, hs'⟩ := stepSafe hs
-    have h := ih (steps := steps + 1) hs'
-    rcases s with ⟨c, κ⟩
-    cases c <;> cases κ
-    all_goals first
-      | exact terminalHasType hs
-      | simpa only [runMachine, hstep, Except.bind] using h
+  | value v => {
+    cases κ with
+    | nil => cases h; exact terminalHasType hs
+    | cons F κ => {
+      simp only [hstep] at h
+      exact ih s' (k + 1) r h hs'
+    }
+  }
+}
+
+/-- A typed execution may diverge, but it cannot return a runtime error. -/
+theorem runMachineSafe (hs : ⊢ₘ s ∶ τ) :
+  match runMachine s steps with
+  | none => True
+  | some (.ok (v, _)) => ⊢ᵥ v ∶ τ
+  | some (.error _) => False
+:= by {
+  cases hr : runMachine s steps with
+  | none => trivial
+  | some r => {
+    cases r with
+    | error d => exact runMachineResultSafe hr hs
+    | ok r => rcases r with ⟨v, k⟩; exact runMachineResultSafe hr hs
   }
 }
 
 theorem evaluateInSafe (hρ : ρ ⊨ Γ) (he : Γ ⊢ e ∶ τ) :
-  match evaluateIn ρ e fuel with
-  | .ok (v, _) => ⊢ᵥ v ∶ τ
-  | .error d => d = ⟨"Resource limit", "Evaluation exceeded the machine step limit.", {}⟩
+  match evaluateIn ρ e with
+  | none => True
+  | some (.ok (v, _)) => ⊢ᵥ v ∶ τ
+  | some (.error _) => False
 := by {
   exact runMachineSafe (.mk (.expr hρ he) .nil)
 }
 
 theorem evaluateSafe (he : [] ⊢ e ∶ τ) :
-  match evaluate e fuel with
-  | .ok (v, _) => ⊢ᵥ v ∶ τ
-  | .error d => d = ⟨"Resource limit", "Evaluation exceeded the machine step limit.", {}⟩
+  match evaluate e with
+  | none => True
+  | some (.ok (v, _)) => ⊢ᵥ v ∶ τ
+  | some (.error _) => False
 := by {
   exact evaluateInSafe .nil he
 }
 
-theorem evaluatePreservesTyping (he : [] ⊢ e ∶ τ) (h : evaluate e fuel = .ok (v, steps)) : ⊢ᵥ v ∶ τ := by {
-  have hsafe := evaluateSafe (fuel := fuel) he
+theorem evaluatePreservesTyping (he : [] ⊢ e ∶ τ) (h : evaluate e = some (.ok (v, steps))) : ⊢ᵥ v ∶ τ := by {
+  have hsafe := evaluateSafe he
   rw [h] at hsafe
   exact hsafe
 }
 
-theorem evaluateNoRuntimeError (he : [] ⊢ e ∶ τ) (h : evaluate e fuel = .error d) :
-  d.phase = "Resource limit"
-:= by {
-  have hsafe := evaluateSafe (fuel := fuel) he
+theorem evaluateNoRuntimeError (he : [] ⊢ e ∶ τ) : evaluate e ≠ some (.error d) := by {
+  intro h
+  have hsafe := evaluateSafe he
   rw [h] at hsafe
-  cases hsafe
-  rfl
+  exact hsafe
 }
 
 end LambdaCalculus

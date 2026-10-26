@@ -5,6 +5,7 @@ import wasmUrl from '../generated/stlc.wasm?url';
 
 type Response =
   | { status: 'success'; type: string; value: string | null; term: string; steps: number }
+  | { status: 'diverged' }
   | { status: 'error'; diagnostic: { phase: string; message: string; range: Range } };
 
 // Instantiation is lazy so a failure is returned through the playground's RPC.
@@ -21,10 +22,9 @@ serveExecution(self, {
     const document = input.documents.find((candidate) => candidate.uri === input.entryDocumentUri);
     if (!document) throw new Error('The entry document is missing.');
     const module = await loadModule();
-    const pointer = module.ccall('stlc_request', 'number', ['string', 'number', 'number', 'number'], [
+    const pointer = module.ccall('stlc_request', 'number', ['string', 'number', 'number'], [
       document.text,
       new TextEncoder().encode(document.text).length,
-      100_000,
       input.entryPoint === 'check' ? 1 : 0,
     ]);
     if (!pointer) throw new Error('The Lean runtime ran out of memory.');
@@ -34,6 +34,7 @@ serveExecution(self, {
     } finally {
       module._free(pointer);
     }
+    if (response.status === 'diverged') throw new Error('Evaluation does not terminate.');
     if (response.status === 'error') {
       const diagnostic = response.diagnostic;
       return {

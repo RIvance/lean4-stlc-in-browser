@@ -12,9 +12,9 @@ const cases = JSON.parse(corpus.stdout);
 const module = await createModule();
 assert.equal(module._stlc_init(), 0);
 
-function evaluate(source, fuel = 100_000, checkOnly = false) {
-  const pointer = module.ccall('stlc_request', 'number', ['string', 'number', 'number', 'number'], [
-    source, Buffer.byteLength(source), fuel, Number(checkOnly),
+function evaluate(source, checkOnly = false) {
+  const pointer = module.ccall('stlc_request', 'number', ['string', 'number', 'number'], [
+    source, Buffer.byteLength(source), Number(checkOnly),
   ]);
   assert.notEqual(pointer, 0);
   try { return JSON.parse(module.UTF8ToString(pointer)); }
@@ -23,10 +23,10 @@ function evaluate(source, fuel = 100_000, checkOnly = false) {
 
 for (const item of cases) {
   test(`native/Wasm parity: ${item.name}`, () => {
-    const args = ['--json', '--fuel', String(item.fuel), ...(item.checkOnly ? ['--check'] : [])];
+    const args = ['--json', ...(item.checkOnly ? ['--check'] : [])];
     const native = spawnSync(executable, args, { input: item.source, encoding: 'utf8' });
     assert.equal(native.status, item.error ? 1 : 0, native.stderr);
-    const result = evaluate(item.source, item.fuel, item.checkOnly);
+    const result = evaluate(item.source, item.checkOnly);
     assert.deepEqual(result, JSON.parse(native.stdout));
     if (item.error) assert.equal(result.diagnostic.phase, item.error);
     else {

@@ -57,6 +57,29 @@ test('can stop worker startup and start a new run', async ({ page }) => {
   await expect(page.getByTestId('execution-value')).toContainText('42 : Nat');
 });
 
+test('can interrupt divergent evaluation and run again', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTestId('source-editor')).toBeVisible();
+  for (const source of [
+    'def loop (n: Nat): Nat = loop n\nloop 0',
+    'def x: Nat = x\n42',
+    '{ fix (x: Nat) ⇒ x\n42 }',
+  ]) {
+    await replaceSource(page, source);
+    const loaded = page.waitForResponse((response) => response.url().endsWith('.wasm'));
+    await page.getByRole('button', { name: /^Run/ }).click();
+    await loaded;
+    // A synchronous Wasm loop can delay response.finished() until the worker is terminated.
+    // Allow the interpreter to execute, then verify it is still running.
+    await page.waitForTimeout(250);
+    await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Stop', exact: true }).click();
+    await replaceSource(page, '42');
+    await page.getByRole('button', { name: /^Run/ }).click();
+    await expect(page.getByTestId('execution-value')).toContainText('42 : Nat');
+  }
+});
+
 test('runs recursion and blocks, and requires an expression after explicit in', async ({ page }) => {
   await page.goto('/');
   await replaceSource(page, 'def factorial (n: Nat) =\n  if n == 0 then 1 else n * factorial (n - 1)\nfactorial 5');

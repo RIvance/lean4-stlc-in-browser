@@ -378,54 +378,68 @@ $$
 The resumed body therefore has the required type. In every case the unchanged
 remainder of the continuation preserves the final result type $\tau$.
 
-Let $\mathcal E_N(M)$ denote evaluation from configuration $M$ with budget
-$N\in\mathbb N$, starting the transition count at zero. A successful result is
-$(v,k)$, where $k$ counts executed transitions. A nonfinal configuration with
-no remaining budget returns $\mathsf{timeout}$, the fuel-exhaustion diagnostic;
-runtime errors are separate outcomes. Final configurations return immediately,
-even with zero remaining budget.
+Let $\mathcal E(M,k)$ denote partial evaluation from configuration $M$, with
+transition count $k\in\mathbb N$. Its outcomes form a flat domain: divergence
+$\bot$ is below every completed outcome, and distinct completed outcomes are
+incomparable. A completed outcome is either a value and transition count
+$(v,k')$ or a runtime diagnostic $\mathsf{error}(d)$. Evaluation is the least
+fixed point of the following equations:
 
-### Theorem. *Safety for every evaluation budget*
+$$
+\mathcal E(M,k)=
+\begin{cases}
+(v,k) & \text{if }M=\langle v,[]\rangle,\\
+\mathcal E(M',k+1) & \text{if }M\text{ is nonfinal and }M\longmapsto M',\\
+\mathsf{error}(d) & \text{if }M\text{ is nonfinal and its step fails with }d.
+\end{cases}
+$$
 
-For every $M$, $\tau$, and $N\in\mathbb N$,
+Write $\mathcal E(M)=\mathcal E(M,0)$. The least-fixed-point interpretation
+assigns $\bot$ to an infinite execution. This is a mathematical description
+of nontermination, not an algorithm for detecting it.
+
+### Theorem. *Safety of partial evaluation*
+
+For every $M$ and $\tau$,
 
 $$
 \vdash_{\mathrm M}M:\tau
 \quad\Longrightarrow\quad
-\mathcal E_N(M)\in
-\{\mathsf{timeout}\}\cup
+\mathcal E(M)\in
+\{\bot\}\cup
 \{(v,k)\mid k\in\mathbb N\ \land\ \vdash_{\mathrm V}v:\tau\}.
 $$
 
-*Proof.* Induct on $N$. A final configuration yields a value of the result type
-by inversion of empty-continuation typing. A nonfinal configuration with zero
-budget times out. With positive budget, progress supplies a successful step,
-preservation types its successor, and the induction hypothesis applies.
+*Proof.* Use fixed-point induction, generalized to every starting transition
+count. The property holds at $\bot$. A final configuration yields a value of
+the result type by inversion of empty-continuation typing. For a nonfinal
+configuration, progress supplies a successful step, preservation types its
+successor, and the induction hypothesis applies. Thus evaluation can diverge
+or return a correctly typed value, but cannot return a runtime diagnostic.
 
 ### Corollary. *Safety after successful inference*
 
-For every $\Gamma$, $\rho$, $e$, $\tau$, and $N\in\mathbb N$,
+For every $\Gamma$, $\rho$, $e$, and $\tau$,
 
 $$
 \rho\models\Gamma\ \land\ \mathcal I(\Gamma,e)\Downarrow\tau
 \quad\Longrightarrow\quad
-\mathcal E_N(\langle e,\rho,[]\rangle)\in
-\{\mathsf{timeout}\}\cup
+\mathcal E(\langle e,\rho,[]\rangle)\in
+\{\bot\}\cup
 \{(v,k)\mid k\in\mathbb N\ \land\ \vdash_{\mathrm V}v:\tau\}.
 $$
 
 *Proof.* By *Soundness of inference*, the expression is typed. Environment
 agreement and the empty continuation type its initial configuration. Apply
-*Safety for every evaluation budget*. In particular, the only possible
-evaluation error after successful inference in a matching environment is
-exhaustion of the evaluation budget.
+*Safety of partial evaluation*. In particular, successful inference in a
+matching environment rules out runtime diagnostics without claiming termination.
 
 ### Theorem. *Soundness of source processing*
 
 Let $u$ be source text. Write $\mathcal P_{\mathrm c}(u)\Downarrow(e,\tau)$
 for successful parsing and type checking in the empty context, and
-$\mathcal P_{\mathrm r,N}(u)\Downarrow(e,\tau,v,k)$ for successful parsing,
-type checking, and evaluation with budget $N$ in the empty environment. Then
+$\mathcal P_{\mathrm r}(u)\Downarrow(e,\tau,v,k)$ for successful parsing,
+type checking, and evaluation in the empty environment. Then
 
 $$
 \mathcal P_{\mathrm c}(u)\Downarrow(e,\tau)
@@ -434,7 +448,7 @@ $$
 $$
 
 $$
-\mathcal P_{\mathrm r,N}(u)\Downarrow(e,\tau,v,k)
+\mathcal P_{\mathrm r}(u)\Downarrow(e,\tau,v,k)
 \quad\Longrightarrow\quad
 \varnothing\vdash e:\tau\ \land\ \vdash_{\mathrm V}v:\tau.
 $$
@@ -451,12 +465,13 @@ For any type $\tau$, let $\Omega_\tau=\mathsf{fix}^{\tau}\ x.\,x$. Then
 $$
 \forall\Gamma.\ \Gamma\vdash\Omega_\tau:\tau,
 \qquad
-\forall\rho.\ \forall N\in\mathbb N.\
-\mathcal E_N(\langle\Omega_\tau,\rho,[]\rangle)=\mathsf{timeout}.
+\forall\rho.\
+\mathcal E(\langle\Omega_\tau,\rho,[]\rangle)=\bot.
 $$
 
 *Proof.* The variable rule gives $\Gamma,x:\tau\vdash x:\tau$, and the
 fixed-point rule gives the first conclusion. Evaluation first installs the
 suspended binding for $x$. Every subsequent lookup resumes the same expression
 in the same extended environment, so the machine repeats a nonfinal
-configuration. Induction on the budget gives the second conclusion.
+configuration. Fixed-point induction excludes every completed outcome from
+this self-loop, so its least-fixed-point result is $\bot$.

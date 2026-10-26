@@ -1,10 +1,12 @@
 prelude
 import LambdaCalculus.Typing
+import Init.Internal.Order
 
 /-!
 A call-by-value closure machine. A continuation represents pending work explicitly,
-so evaluation uses constant host stack space. Fuel counts machine transitions and
-is an execution limit, independent of the language's types and terms.
+so evaluation uses constant host stack space. Evaluation is a partial fixpoint:
+the outer option denotes divergence; a completed computation returns a value
+and its transition count, or a runtime diagnostic.
 -/
 
 namespace LambdaCalculus
@@ -95,18 +97,22 @@ def Machine.step (s : Machine) : Except Diagnostic Machine := do
       | .operand ρ op e p => return ⟨.expr ρ e, .binary op v p :: κ⟩
       | .binary op v₁ p => return ⟨.value (← applyBinOp op v₁ v p), κ⟩
 
-def runMachine (fuel : Nat) (s : Machine) (steps : Nat := 0) : Except Diagnostic (Value × Nat) :=
+/-- Partial computations distinguish divergence from a completed diagnostic or value. -/
+abbrev Evaluation := ExceptT Diagnostic Option
+
+def runMachine (s : Machine) (steps : Nat := 0) : Option (Except Diagnostic (Value × Nat)) :=
   match s.control, s.stack with
-  | .value v, [] => .ok (v, steps)
+  | .value v, [] => some (.ok (v, steps))
   | _, _ =>
-    match fuel with
-    | 0 => .error ⟨"Resource limit", "Evaluation exceeded the machine step limit.", {}⟩
-    | fuel + 1 => do runMachine fuel (← s.step) (steps + 1)
+    match s.step with
+    | .error d => some (.error d)
+    | .ok s' => runMachine s' (steps + 1)
+partial_fixpoint
 
-def evaluateIn (ρ : Env) (e : Expr) (fuel : Nat := 100000) : Except Diagnostic (Value × Nat) :=
-  runMachine fuel ⟨.expr ρ e, []⟩
+def evaluateIn (ρ : Env) (e : Expr) : Evaluation (Value × Nat) :=
+  runMachine ⟨.expr ρ e, []⟩
 
-def evaluate (e : Expr) (fuel : Nat := 100000) : Except Diagnostic (Value × Nat) :=
-  evaluateIn [] e fuel
+def evaluate (e : Expr) : Evaluation (Value × Nat) :=
+  evaluateIn [] e
 
 end LambdaCalculus
